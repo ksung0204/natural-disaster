@@ -1,0 +1,505 @@
+---
+title: | 
+  DATA1001 - Project 2
+  
+  Allocated Lab session: Monday, 16:00 - 18:00
+author: "SIDs: 541006651 "
+date: "`r Sys.Date()`"
+format: 
+  html:
+    embed-resources: true
+    toc: true  # Enable a Table of Contents
+    highlight-style: "zenburn"
+    code-fold: true
+    code-overflow: wrap  # Wrap long lines of code in code blocks
+    title-block-style: "manuscript"
+    df-print: paged  # Paginate large dataframes
+
+    
+---
+
+
+
+<span style="color:blue; font-size:1.9em;">  **1. Client Bio and Recommendation**</span>
+
+
+The Global Facility for Disaster Reduction and Recovery (GFDRR), in partnership with the World Bank, plays a pivotal role in providing financial assistance to countries and guiding them in mitigating the human and economic impact of natural disasters. GFDRR also focuses on helping countries rebuild infrastructure after disasters, improving early warning systems, and promoting sustainable recovery efforts following catastrophic events. 
+
+**GFDRR should take a two-pronged approach.** In developed countries, **prioritizing investments** in **infrastructure, resilient housing, and sustainable transportation systems** should be the top priority to **minimize economic damages**. On the other hand, in less developed countries, the **focus should be on investing in early warning systems**, improving disaster preparedness, and enhancing response efforts to reduce the number of people affected by natural disasters. 
+
+<hr style='border: 6px solid black;'>
+
+<span style="color:blue; font-size:1.9em;">  **2. Evidence**</span>
+
+<span style="color:red; font-size:1.5em;">  **2.1 Initial Data Analysis**</span>
+
+
+- For the purpose of data analysis, four columns were selected: `Entity`, `Year`, `Total economic damages from disasters`, and `Number of total people affected by disasters`.
+
+- The `Year` column was filtered to include only data from 1990 onwards 
+
+- Null values in the columns were removed in `clean_data`. 
+
+- Countries where both the `Number of people affected by natural disasters` and `Total economic damages from disasters` columns had values of zero were also filtered out.
+
+
+
+
+```{r, warning = FALSE, message = FALSE}
+
+# Load necessary libraries
+library(tidyverse)
+library(ggplot2)
+library(lubridate)
+
+# Load the dataset
+file_path <- "natural-disasters.csv"
+data <- read_csv(file_path)
+
+# Filter for data from 1990 onwards, exclude rows where both people affected and economic damages are zero, 
+# and select relevant columns
+datanew <- data %>%
+  filter(Year >= 1990) %>%  # Filter rows where the Year is 1990 or later
+  filter(`Number of total people affected by disasters` != 0 | `Total economic damages from disasters` != 0) %>%
+  select(Entity, 
+         Year,  # Optionally include Year if needed for further analysis
+         `Total economic damages from disasters`, 
+         `Number of total people affected by disasters`)
+
+# Data cleaning: omit null values
+clean_data <- na.omit(datanew)
+
+
+
+```
+<span style="color:red; font-size:1.5em;">  **2.2 Distribution of total economic damages and people affected by natural disasters around the world**</span>
+
+
+```{r, warning = FALSE, message = FALSE}
+# Load necessary libraries
+library(ggplot2)
+library(rnaturalearth)
+library(rnaturalearthdata)
+library(sf)
+library(plotly)
+library(scales)  # For number formatting
+library(stringr)  # For string operations
+entity_totals <- clean_data %>%
+  group_by(Entity) %>%
+  summarise(
+    `Total economic damages from disasters` = sum(`Total economic damages from disasters`, na.rm = TRUE),
+    `Number of total people affected by disasters` = sum(`Number of total people affected by disasters`, na.rm = TRUE)
+  )
+# Load world map data using rnaturalearth
+world <- ne_countries(scale = "medium", returnclass = "sf")
+
+# Standardize country names in your dataset
+entity_totals$Entity <- tolower(entity_totals$Entity)
+
+# Create a function to standardize country names
+standardize_country_name <- function(country_name) {
+  country_name <- str_replace_all(country_name, "united states of america", "united states")
+  country_name <- str_replace_all(country_name, "czech republic", "czechia")
+  country_name <- str_replace_all(country_name, "moldavia", "moldova")
+  country_name <- str_replace_all(country_name, "bosnia and herzegovina", "bosnia and herz.")
+  country_name <- str_replace_all(country_name, "türkiye", "turkey")
+  return(country_name)
+}
+
+# Apply the function to standardize country names in the cleaned data
+entity_totals$Entity <- sapply(entity_totals$Entity, standardize_country_name)
+
+# Also standardize country names in the world map data
+world$name <- tolower(world$name)
+world$name <- sapply(world$name, standardize_country_name)
+
+# Merge the cleaned dataset with the world map data
+merged_data <- merge(world, entity_totals, by.x = "name", by.y = "Entity", all.x = TRUE)
+
+# Ensure the 'Total economic damages from disasters' is numeric and scaled for easier visualization
+merged_data$`Economic Damages (Billions)` <- as.numeric(merged_data$`Total economic damages from disasters`) / 1e6
+
+
+# Create the map visualization with total economic damages in billions
+disaster_map <- ggplot(data = merged_data) +
+  geom_sf(aes(fill = `Economic Damages (Billions)`), color = "black", size = 0.2) +
+  scale_fill_viridis_c(option = "plasma", na.value = "grey50") +
+  theme_minimal() +
+  labs(title = "Global Distribution of Economic Damages from Natural Disasters", fill = "Economic Damages (Billions)")
+
+# Use ggplotly to make the map interactive (zoomable and pan-able)
+interactive_disaster_map <- ggplotly(disaster_map)
+
+# Display the interactive map
+interactive_disaster_map
+```
+<span style="font-style: italic; font-size: 0.9em;">**FIgure 1: Map of economic damages for each country in the world** </span>
+```{r, warning = FALSE, message = FALSE}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For number formatting
+
+entity_totals <- clean_data %>%
+  group_by(Entity) %>%
+  summarise(
+    `Total economic damages from disasters` = sum(`Total economic damages from disasters`, na.rm = TRUE),
+    `Number of total people affected by disasters` = sum(`Number of total people affected by disasters`, na.rm = TRUE)
+  )
+# Define the countries of interest for Economic Damages
+selected_countries_damages <- c('High income', 'United States', '	
+Upper middle income', 'China', 'Japan', 'Europe')
+
+# Filter the data for the selected countries (case-insensitive filtering)
+country_data_damages <- entity_totals %>%
+  filter(Entity %in% selected_countries_damages) %>%
+  group_by(Entity) %>%
+  summarise(
+    Total_Economic_Damages = sum(`Total economic damages from disasters`, na.rm = TRUE)
+  )
+
+# Convert country names to uppercase for consistency in plotting
+country_data_damages$Entity <- toupper(country_data_damages$Entity)
+
+# Bar plot for Total Economic Damages (1990-2010)
+damage_plot <- ggplot(country_data_damages, aes(x = reorder(Entity, Total_Economic_Damages), y = Total_Economic_Damages)) +
+  geom_bar(stat = "identity", fill = "steelblue") +
+  coord_flip() +  # Flip for better readability
+  labs(title = "Total Economic Damages by Country (1990-2010)",
+       x = "Country",
+       y = "Total Economic Damages (in USD)") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma)  # Format numbers with commas
+
+
+# Define the countries of interest for People Affected
+selected_countries_affected <- c('China', 'Afica', 'Bangladesh', 'Lower middle income', 'Low income')
+
+# Filter the data for the selected countries (case-insensitive filtering)
+country_people_affected <- entity_totals %>%
+  filter(Entity %in% selected_countries_affected) %>%
+  group_by(Entity) %>%
+  summarise(
+    Total_People_Affected = sum(`Number of total people affected by disasters`, na.rm = TRUE)
+  )
+
+# Convert country names to uppercase for consistency
+country_people_affected$Entity <- toupper(country_people_affected$Entity)
+
+# Bar plot for Total People Affected (1990-2010)
+people_affected_plot <- ggplot(country_people_affected, aes(x = reorder(Entity, Total_People_Affected), y = Total_People_Affected)) +
+  geom_bar(stat = "identity", fill = "darkorange") +
+  coord_flip() +  # Flip for better readability
+  labs(title = "Total People Affected by Country (1990-2010)",
+       x = "Country",
+       y = "Total People Affected") +
+  theme_minimal() +
+  scale_y_continuous(labels = scales::comma)  # Format numbers with commas
+
+# Display both plots
+print(damage_plot)
+print(people_affected_plot)
+
+```
+<span style="font-style: italic; font-size: 0.9em;">**Figure 2 and 3: Ranking the total economic damages and number of people affected by each regions.** </span>
+
+In these charts, I am not only including individual countries but also grouping regions (as defined in the dataset) to highlight the magnitude of economic damages and people affected. For example, the United States, China, and Japan have suffered greater damages than Europe. As for the people affected, China has more people affected than all lower middle-income and low-income countries combined, and the number of people affected in Bangladesh is greater than in high-income countries, Europe, and others. (These are ranking-based charts.)
+
+The analysis shows that China is an exception because it not only suffers from significant total damages from natural disasters but also has a large number of people affected by them. In contrast, many other countries follow a different trend: developed countries such as the USA, Japan, European nations, and high-income countries experience substantial economic losses. For lower-middle-income and low-income countries, they tend to face a higher number of people affected by natural disasters.
+
+
+<span style="color:red; font-size:1.5em;">  **2.3 Linear model**</span>
+
+
+To test the relationship between the number of people affected by disasters and total economic damages caused by disasters, a linear model was created. The calculated correlation coefficient, r = 0.65, indicates a moderate relationship between the two variables. Following this, a residual plot was generated to assess whether a linear model is appropriate for the data. However, the residual plot is not randomly distributed around the horizontal line. . Instead, it converges mainly in the lower range of fitted values. This pattern indicates potential heteroscedasticity, implying that there is not enough evidence to conclude relationships between those two variables. 
+
+<span style="color:red; font-size:1.5em;">  **2.4 Hypotheses Testing:**</span>
+
+Testing the claim: There is a significant difference between the average economic damages from 1990 to 2010 in High income and Low income countries
+
+By using Welch Two-Sample t-test, 
+  
+ -  p-value=0.07
+  
+ -  p-value<0.1
+
+<span style="font-style: italic; font-size: 0.9em;">**Reason why choosing p-value<0.1:  Variables such as economic damages and the number of people affected by natural disasters are widely dispersed across countries, making it difficult to detect strong differences. By using a larger p-value threshold (0.1), it  can be more sensitive in detecting subtle trends or relationships that still hold practical significance.** </span>
+
+
+
+
+```{r, warning = FALSE, message = FALSE}
+economic_damages <- clean_data$`Total economic damages from disasters`
+people_affected <- clean_data$`Number of total people affected by disasters`
+
+# Conduct a t-test to compare the two groups
+t.test(economic_damages, people_affected, alternative = "two.sided", conf.level = 0.90, var.equal = TRUE, paired = FALSE)
+```
+
+
+
+<hr style='border: 6px solid black;'>
+
+
+<span style="color:blue; font-size:1.9em;">  **3. Appendix: Defense of Approach**</span>
+
+<span style="color:red; font-size:1.5em;">  **3.1 Client choice**</span>
+
+<span style="font-style: italic; font-size:1.1em; font-weight: bold;">I chose GFDRR because the world increasingly faces natural disasters. GFDRR helps countries develop strategies tailored to their specific conditions, providing financial aid and technical support. This allows nations to effectively prepare for and respond to disasters, reducing both human and economic impacts.</span>
+
+
+<span style="color:red; font-size:1.5em;">  **3.2 Statistical Analysis**</span>
+
+:::: {.panel-tabset}
+
+
+
+I chose GFDRR because the world increasingly faces natural disasters. GFDRR helps countries develop strategies tailored to their specific conditions, providing financial aid and technical support. This allows nations to effectively prepare for and respond to disasters, reducing both human and economic impacts.
+
+
+### <span style="color:red; font-size:1.5em;">3.2.1 Linear Modelling</span>
+
+
+```{r, warning = FALSE, message = FALSE}
+# Compute the correlation between the two variables
+correlation_coefficient <- cor(clean_data$`Number of total people affected by disasters`, clean_data$`Total economic damages from disasters`)
+
+# Rounding the value to 2 decimal places
+rounded_correlation <- round(correlation_coefficient, 2)
+
+# Print the rounded correlation coefficient
+print(paste("Correlation Coefficient: ", rounded_correlation))
+
+```
+An r-value of 0.65 may suggest a moderate correlation. However, there is not enough evidence, meaning that further checks are required.
+```{r, warning = FALSE, message = FALSE}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+
+# 1. Prepare the Data for the Regression Analysis
+# Ensure that we have non-missing data for both variables
+regression_data <- clean_data %>%
+  filter((`Number of total people affected by disasters`) & 
+         (`Total economic damages from disasters`))
+
+# Fit the linear model
+model <- lm(`Total economic damages from disasters` ~ `Number of total people affected by disasters`, data = regression_data)
+
+# 2. Regression Line Plot
+regression_plot <- ggplot(regression_data, 
+                          aes(x = `Number of total people affected by disasters`, y = `Total economic damages from disasters`)) +
+  
+  # Scatter plot of the data points with custom color
+  geom_point(color = "darkseagreen", size = 2) +  
+  
+  # Add a linear model trend line
+  geom_smooth(method = "lm", color = "gray1") +
+  
+  # Title and axis labels
+  labs(title = "Relationship Between People Affected and Economic Damages",
+       y = "Total Economic Damages (USD)",
+       x = "Number of People Affected by Disasters") +
+  
+  # Custom theme for a clean look
+  theme_light() +
+  
+  # Scale x-axis and y-axis formatting
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma)
+
+# 3. Residual Plot
+# Adding the fitted and residual values to the dataset
+regression_data$.fitted <- fitted(model)
+regression_data$.resid <- resid(model)
+
+residual_plot <- ggplot(regression_data, aes(x = .fitted, y = .resid)) +
+  
+  # Scatter plot for residuals
+  geom_point(color = "dodgerblue", size = 2) + 
+  
+  # Horizontal line at y = 0
+  geom_hline(yintercept = 0, linetype = "dashed", color = "red") +
+  
+  # Title and axis labels
+  labs(title = "Residuals vs Fitted Values",
+       y = "Residuals",
+       x = "Fitted Economic Damages") +
+  
+  # Apply clean theme for better visuals
+  theme_light() +
+  
+  # Scale x-axis and y-axis formatting to remove scientific notation
+  scale_x_continuous(labels = scales::comma) +
+  scale_y_continuous(labels = scales::comma)  # This line formats the y-axis without 'e'
+
+# Display the plot
+print(regression_plot)
+print(residual_plot)
+
+
+```
+This residual plot does not follow a normal distribution due to several key factors: 
+
+- The residuals are not randomly distributed around the zero line
+
+- There are outliers (extreme residuals)
+
+- Funnel-shaped residuals (Fanning out)
+
+These issues violate the assumptions of linear regression, causing the residuals to deviate from a normal distribution.
+
+### <span style="color:red; font-size:1.5em;">3.2.2 Hypothesis testing </span>
+
+
+
+
+
+
+<span style="font-style: italic; color:green; font-size:1.2em;"> Hypothesis: </span>
+
+
+- Null Hypothesis (H₀): There is no significant difference between the average economic damages from 1990 to 2010 in High income and Low income countries.
+
+- Alternative Hypothesis (H₁): There is a significant difference between the average economic damages from 1990 to 2010 in High income and Low income countries.
+
+<span style="font-style: italic; color:green; font-size:1.2em;"> Independence: </span>
+
+- Each group is divided into different countries, so a country must appear in only one group, not both
+
+
+<span style="font-style: italic; color:green; font-size:1.2em;"> Equality of variance: </span>
+ The Box plot show the significant difference between two groups. 
+```{r, warning = FALSE, message = FALSE}
+# Load necessary libraries
+library(ggplot2)
+library(dplyr)
+library(scales)  # For the comma formatting in the y-axis
+
+# Set options to avoid scientific notation
+options(scipen = 999)
+
+# Filter data for the years 1990 to 2010
+filtered_data <- clean_data %>%
+  filter(Year >= 1990 & Year <= 2010)
+
+# Separate data by income levels
+high_income_data <- filtered_data %>%
+  filter(Entity == "High income")
+
+low_income_data <- filtered_data %>%
+  filter(Entity == "Low income")
+
+# Extract the economic damages for high-income and low-income countries
+high_income_damages <- high_income_data$`Total economic damages from disasters`
+low_income_damages <- low_income_data$`Total economic damages from disasters`
+
+### Boxplot for Visualizing Variance with Comma-Formatted Y-Axis ###
+
+# Create a data frame to combine both high-income and low-income damages
+combined_data <- data.frame(
+  IncomeLevel = rep(c("High Income", "Low Income"), 
+                    c(length(high_income_damages), length(low_income_damages))),
+  Damages = c(high_income_damages, low_income_damages)
+)
+
+# Create the boxplot using ggplot2 with formatted y-axis labels
+ggplot(combined_data, aes(x = IncomeLevel, y = Damages)) +
+  geom_boxplot(fill = "lightgray") +
+  scale_y_continuous(labels = comma) +  # Format y-axis with commas
+  labs(title = "Boxplot of Economic Damages by Income Level",
+       y = "Economic Damages",
+       x = "") +
+  theme_minimal()
+```
+
+
+<span style="font-style: italic; font-size: 0.9em;">**Therefore, it is available to reject the null hypothesis and conclude that there is a significant difference between the average economic damages from 1990 to 2010 in High income and Low income countries.** </span>
+ 
+
+
+::::
+
+
+<hr style='border: 6px solid black;'>
+
+
+<span style="color:blue; font-size:1.9em;">  **4. Reference**</span>
+
+- The Economic Impacts of Natural Disasters: A Review of Models and Empirical Studies by W. J. Wouter Botzen, Olivier Deschenes, and Mark Sanders. 
+
+- This article comes from The University of Chicago Press. It mainly discusses the direct and indirect effects of natural disasters and suggests policies to minimize the damages.
+
+- According to the article, richer nations tend to have better buildings, more developed healthcare systems, and more advanced information systems, which enable them to better cope with shocks and reduce the number of people affected and death rates.
+
+[Click here to access the article](https://www.journals.uchicago.edu/doi/10.1093/reep/rez004)
+
+
+
+
+
+<hr style='border: 6px solid black;'>
+
+
+<span style="color:blue; font-size:1.9em;">  **5. Data limitation**</span>
+
+- <span style="font-style: italic; font-size:1.1em; font-weight: bold;">Missing value:</span>: Many columns contain a large amount of missing data, which could limit the accuracy of assessments.
+
+- <span style="font-style: italic; font-size:1.1em; font-weight: bold;">Time:</span>: The data ranges from 1900 to 2010, meaning it is quite outdated, and conclusions drawn from it may no longer be relevant to the present day.
+
+- <span style="font-style: italic; font-size:1.1em; font-weight: bold;">Lack of clear units:</span>: For metrics such as economic damages, the dataset lacks specified units. It is assumed that the values are in USD, but this is not explicitly stated.
+
+
+
+
+<hr style='border: 6px solid black;'>
+
+
+<span style="color:blue; font-size:1.9em;">  **6. Ethics Statement**</span>
+
+<span style="color:red; font-size:1.5em;">  **Shared Professional Values**</span>
+
+
+<div style="text-align:justify;"> <span style="color:#0066cc"><i> "<b>1. Respect: </b>We respect the privacy of others and the promises of confidentiality given to them. We respect the communities where data is collected and guard against harm coming to them by misuse of the results. We should not suppress or improperly detract from the work of others." </i></span>
+
+- At the outset, I ensured that any data included in this report was used with appropriate consent. If permission was not granted, that data was excluded from our analysis to respect the participants' wishes.
+
+- I also take steps to protect the confidentiality of the data by restricting access and preventing any misuse that could negatively affect the individuals or communities involved.
+
+- Additionally, I value the work of our colleagues and openly welcome feedback to improve the accuracy and impact of our report.
+
+</div>
+
+<span style="color:red; font-size:1.5em;">  **Ethical Principles**</span>
+
+<div style="text-align:justify;"> <span style="color:#0066cc"><i> "<b>8. Maintaining Confidence in Statistics:</b> To foster public trust, statisticians must ensure that their findings are presented accurately and with proper context. It's their duty to explain the strengths and limitations of the data, highlighting any potential reliability or applicability concerns." </i></span>
+
+In this project, I adhere to the highest standards of data integrity. I have extracted the necessary data columns for analysis without altering the original entries, even when some values appeared inconsistent. Instead, I conducted a thorough analysis and transparently communicated our findings, drawing attention to potential data limitations and ensuring users are fully informed of the possible biases in the dataset.
+
+</div>
+
+<hr style='border: 6px solid black;'>
+
+<span style="color:blue; font-size:1.9em;">  **7. Acknowledgments**</span>
+
+- **Ed post links:**
+
+<small>
+  - <i> [https://edstem.org/au/courses/16787/discussion/2306103](URL)</i>
+</small>
+
+
+
+
+![**ChatGPT sessions:**](D:/USYD/DATA1001/project2/Screenshot 2024-10-22 232924){width=50%}
+
+![**ChatGPT sessions:**](D:/USYD/DATA1001/project2/Screenshot 2024-10-22 232924.png){width=50%}
+
+
+![**ChatGPT sessions:**](D:/USYD/DATA1001/project2/Screenshot 2024-10-22 234748.png){width=50%}
+![**ChatGPT sessions:**](D:/USYD/DATA1001/project2/Screenshot 2024-10-22 234937.png){width=50%}
+
+
+![**ChatGPT sessions:**](D:/USYD/DATA1001/project2/Screenshot 2024-10-22 235038.png){width=50%}
+
+
